@@ -12,6 +12,7 @@
 #include <Windows.h>
 #include <algorithm>
 using namespace std;
+const int num_threads = 4;
 template<typename T>
 int bin_search(vector<T> mas, T search) { // работает правильно
     int left = 0, right = mas.size(), step = 0;
@@ -104,12 +105,14 @@ void Clu(map<vector<int>, vector<int>>& delta_level, vector<vector<int>> Graph, 
         }
     }
 }
-void Clu_parallel(map<vector<int>, vector<int>>& delta_level, vector<vector<int>> Graph, int level_num, int* delta_U, int num_threads) { // работает правильно
+void Clu_parallel(map<vector<int>, vector<int>>& delta_level, vector<vector<int>> Graph, int level_num, int* delta_U) {
+    map<vector<int>, vector<int>> delta_thread[num_threads];
+    
 #pragma omp parallel for num_threads(num_threads)
-    for (int i = omp_get_thread_num(); i < Graph.size(); i += num_threads) {
+    for (int i = 0; i < Graph.size(); i++) {
         if (level_num > delta_U[i]) continue;
         if (level_num == delta_U[i]) {
-            delta_level[Graph[i]].push_back(i);
+            delta_thread[omp_get_thread_num()][Graph[i]].push_back(i);
             continue;
         }
         int p = level_num - 1;
@@ -118,14 +121,26 @@ void Clu_parallel(map<vector<int>, vector<int>>& delta_level, vector<vector<int>
         while (p >= 0) {
             vector<int> Xu;
             for (int j = 0; j < level_num; j++) Xu.push_back(Graph[i][v[j]]);
-            delta_level[Xu].push_back(i);
+            delta_thread[omp_get_thread_num()][Xu].push_back(i);
             if (v[level_num - 1] == delta_U[i] - 1) p--;
             else p = level_num - 1;
             if (p >= 0) for (int j = level_num - 1; j >= p; j--) v[j] = v[p] + j - p + 1;
         }
     }
+    for (int p = 0; p < num_threads; p++) {
+        for (auto iter = delta_thread[omp_get_thread_num()].begin(); iter != delta_thread[omp_get_thread_num()].end(); iter++) {
+            if (delta_level.count(iter->first)) {
+                //P[k - 1][Xu] = P[k - 1][Xu] + char(U[i] + 1);
+                for (auto itr = iter->first.begin(); itr != iter->first.end(); itr++) delta_level[iter->first].push_back(*itr);
+            }
+            else {
+                delta_level[iter->first] = iter->second;
+            }
+        }
+        delta_thread[p].clear();
+    }
 }
-void HFindMCS(map<vector<int>, vector<int>>& MCS, vector<vector<int>> Graph) { // работает правильно
+void HFindMCS(map<vector<int>, vector<int>>& MCS, vector<vector<int>> Graph,int parallel = 0) { // работает правильно
     int delta = 0, * delta_U = new int[Graph.size()];
     for (int i = 0; i < Graph.size(); i++) {
         delta_U[i] = Graph[i].size();
@@ -133,28 +148,42 @@ void HFindMCS(map<vector<int>, vector<int>>& MCS, vector<vector<int>> Graph) { /
     }
     map<vector<int>, vector<int>>* levels = new map<vector<int>, vector<int>>[delta];
     for (int i = delta; i > 0; i--) {
-        Clu(levels[i - 1], Graph, i, delta_U);
+        if (parallel == 0) Clu(levels[i - 1], Graph, i, delta_U);
+        if (parallel == 1) Clu_parallel(levels[i - 1], Graph, i, delta_U);
         for (auto it = levels[i - 1].begin(); it != levels[i - 1].end(); ++it) {
-            bool flag = 1;
             if (!MCS.count(it->second)) MCS[it->second] = it->first;
-            //D-вершины, C-рёбра
-           /*cout << endl << "C:";           //Вывод MCS
-           for (int i = 0; i < it->first.size(); i++) {
-            cout << it->first[i] << ' ';
-           }
-           cout << endl << "D:";
-           for (int i = 0; i < it->second.size(); i++) {
-            cout <<
-            it->second[i] << ' ';
-    }
-    cout << endl;
-    //*/
         }
     }
     /*int SIZE = 0;                //Вывод числа комбинаций
     for (int i = 0; i < delta; i++) SIZE += levels[i].size();
     cout << SIZE;*/
 }
+void HFindMCS_parallel(map<vector<int>, vector<int>>& MCS, vector<vector<int>> Graph) {
+    int delta = 0, * delta_U = new int[Graph.size()];
+    for (int i = 0; i < Graph.size(); i++) {
+        delta_U[i] = Graph[i].size();
+        if (delta < Graph[i].size()) delta = Graph[i].size();
+    }
+    map<vector<int>, vector<int>>* levels = new map<vector<int>, vector<int>>[delta];
+#pragma omp parallel for num_threads(num_threads)
+    for (int i = delta; i > 0; i--) Clu(levels[i - 1], Graph, i, delta_U);
+    /*
+#pragma omp parallel num_threads(num_threads)
+    {
+        for (int i = delta - omp_get_thread_num(); i > 0; i -= (omp_get_num_threads() + 1)) Clu(levels[i - 1], Graph, i, delta_U);
+    }*/
+#pragma omp barrier
+    for (int i = delta; i > 0; i--) {
+        //Clu(levels[i - 1], Graph, i, delta_U);
+        for (auto it = levels[i - 1].begin(); it != levels[i - 1].end(); ++it) {
+            if (!MCS.count(it->second)) MCS[it->second] = it->first;
+        }
+    }
+    /*int SIZE = 0;                //Вывод числа комбинаций
+    for (int i = 0; i < delta; i++) SIZE += levels[i].size();
+    cout << SIZE;*/
+}
+
 /*void Dynamic_MCS(vector<pair<vector<int>, vector<int>>>& MCS, vector<int> new_line, vector<vector<int>> old_graph) {
  //vector<pair<vector<int>, vector<int>>> new_vertex_combinations;
  vector<vector<int>> new_vertex_combinations;
@@ -210,6 +239,7 @@ void Graph_output(vector<vector<int>> Graph) { // работает правильно
 }
 int main() {
     srand(time(0));
+
     /*vector<vector<int>> graph(6), graph2;
     graph[0].push_back(0);
     graph[1].push_back(0);
@@ -222,8 +252,9 @@ int main() {
     graph[5].push_back(2);
     graph2 = graph;
     Graph_output(Graph_Transpose(graph));*/
+
     vector<vector<int>> graph;
-    const int N = 100, M = 100, delta = 5;
+    const int N = 1000, M = 1000, delta = 10;
     //cout << N / delta * 2 + 1;
     for (int i = 0; i < N; i++) {                                //рандомная генерация графа
         graph.push_back(vector<int>());
@@ -236,13 +267,20 @@ int main() {
         }
         if (k == 0) graph[i].push_back(rand() % N);
     }
+    cout << "nahalo" << endl;
     //Graph_output(graph);
-    map<vector<int>, vector<int>> MCS;
-    HFindMCS(MCS, graph);
-    //cout << "____________________________________________________________________________________________";
-    cout << MCS.size();
+    map<vector<int>, vector<int>> MCS1;
+    map<vector<int>, vector<int>> MCS2;
+    int time = omp_get_wtime();
+    HFindMCS(MCS1, graph);
+    cout << endl << omp_get_wtime() - time << endl << MCS1.size();
+    time = omp_get_wtime();
+    HFindMCS_parallel(MCS2, graph);
+    cout << endl << omp_get_wtime() - time << endl << MCS1.size();
+    if (MCS1==MCS2) cout << endl << "DA HY HAXYU";
     //Dynamic_MCS(MCS, a, graph);
-    /*for (auto p = MCS.begin(); p != MCS.end(); p++) {
+    /*
+    for (auto p = MCS1.begin(); p != MCS1.end(); p++) {
         cout << endl << "C:";
         for (int j = 0; j < p->first.size(); j++) {     //Вывод MCS
             cout << p->first[j] << ' ';
@@ -252,10 +290,18 @@ int main() {
             cout << p->second[j] << ' ';
         }
         cout << endl;
-    }//*/
-    //cout << MCS.size();
-#pragma omp parallel for num_threads(4) 
-    for (int i = 0; i < 10; i += 4) {
-        printf("%d\n", i);
     }
+    cout << "_____________________________" << endl;
+    for (auto p2 = MCS2.begin(); p2 != MCS2.end(); p2++) {
+        cout << endl << "C:";
+        for (int j = 0; j < p2->first.size(); j++) {     //Вывод MCS
+            cout << p2->first[j] << ' ';
+        }
+        cout << endl << "D:";
+        for (int j = 0; j < p2->second.size(); j++) {
+            cout << p2->second[j] << ' ';
+        }
+        cout << endl;
+    }
+    //*/
 }
