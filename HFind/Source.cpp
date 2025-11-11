@@ -104,6 +104,27 @@ void Clu(map<vector<int>, vector<int>>& delta_level, vector<vector<int>> Graph, 
         }
     }
 }
+void Clu_parallel(map<vector<int>, vector<int>>& delta_level, vector<vector<int>> Graph, int level_num, int* delta_U, int num_threads) { // работает правильно
+#pragma omp parallel for num_threads(num_threads)
+    for (int i = omp_get_thread_num(); i < Graph.size(); i += num_threads) {
+        if (level_num > delta_U[i]) continue;
+        if (level_num == delta_U[i]) {
+            delta_level[Graph[i]].push_back(i);
+            continue;
+        }
+        int p = level_num - 1;
+        vector<int> v;
+        for (int t = 0; t < level_num; t++) v.push_back(t);
+        while (p >= 0) {
+            vector<int> Xu;
+            for (int j = 0; j < level_num; j++) Xu.push_back(Graph[i][v[j]]);
+            delta_level[Xu].push_back(i);
+            if (v[level_num - 1] == delta_U[i] - 1) p--;
+            else p = level_num - 1;
+            if (p >= 0) for (int j = level_num - 1; j >= p; j--) v[j] = v[p] + j - p + 1;
+        }
+    }
+}
 void HFindMCS(map<vector<int>, vector<int>>& MCS, vector<vector<int>> Graph) { // работает правильно
     int delta = 0, * delta_U = new int[Graph.size()];
     for (int i = 0; i < Graph.size(); i++) {
@@ -202,7 +223,7 @@ int main() {
     graph2 = graph;
     Graph_output(Graph_Transpose(graph));*/
     vector<vector<int>> graph;
-    const int N = 10, M = 10, delta = 5;
+    const int N = 100, M = 100, delta = 5;
     //cout << N / delta * 2 + 1;
     for (int i = 0; i < N; i++) {                                //рандомная генерация графа
         graph.push_back(vector<int>());
@@ -213,22 +234,28 @@ int main() {
                 k++;
             }
         }
+        if (k == 0) graph[i].push_back(rand() % N);
     }
-    Graph_output(graph);
+    //Graph_output(graph);
     map<vector<int>, vector<int>> MCS;
     HFindMCS(MCS, graph);
     //cout << "____________________________________________________________________________________________";
     cout << MCS.size();
     //Dynamic_MCS(MCS, a, graph);
-    for (int i = 0; i < MCS.size(); i++) {
+    /*for (auto p = MCS.begin(); p != MCS.end(); p++) {
         cout << endl << "C:";
-        for (int j = 0; j < MCS[i].first.size(); j++) {     //Вывод MCS
-            cout << MCS[i].first[j] << ' ';
+        for (int j = 0; j < p->first.size(); j++) {     //Вывод MCS
+            cout << p->first[j] << ' ';
         }
         cout << endl << "D:";
-        for (int j = 0; j < MCS[i].second.size(); j++) {
-            cout << MCS[i].second[j] << ' ';
+        for (int j = 0; j < p->second.size(); j++) {
+            cout << p->second[j] << ' ';
         }
         cout << endl;
     }//*/
+    //cout << MCS.size();
+#pragma omp parallel for num_threads(4) 
+    for (int i = 0; i < 10; i += 4) {
+        printf("%d\n", i);
+    }
 }
