@@ -199,41 +199,73 @@ void HFindMCS_parallel(vector<pair<vector<int>, vector<int>>>& MCS, vector<vecto
 
 void Dynamic_MCS(vector<pair<vector<int>, vector<int>>>& MCS, vector<int> new_line, vector<vector<int>> old_graph) {
     //vector<pair<vector<int>, vector<int>>> new_vertex_combinations;
-    vector<vector<int>> new_vertex_combinations;
+    vector<vector<int>> new_edges_combinations;;
     vector<int> new_vertex_combination, new_edges_combination;
     vector<vector<int>> graph;
     graph.push_back(new_line);
+    int old_MCS_size = MCS.size();
     int* delta_U = new int;
     *delta_U = new_line.size();
-    for (int level_num = 0; level_num < new_line.size(); level_num++) {
+    for (int level_num = new_line.size(); level_num > 0; level_num--) {
         int p = level_num - 1;
         vector<int> v;
         for (int t = 0; t < level_num; t++) v.push_back(t);
-        while (p >= 0) {
+        while (p >= 0) { //генерируем подстроку - комбинацию рёбер новой строки
             vector<int> Xu;
             for (int j = 0; j < level_num; j++) Xu.push_back(new_line[v[j]]);
-            new_vertex_combination = g(old_graph, Xu);
+            new_vertex_combination = g(old_graph, Xu); //строим закмыкание из вершин по старому графу
             bool flag = 1;
-            for (int i = 0; i < new_vertex_combinations.size(); i++) {
-                if (new_vertex_combinations[i] == new_vertex_combination) {
-                    flag = 0;
-                    break;
-                }
+            int num_concept = 0;
+            if (new_vertex_combination.size() == 0) { //если замыкания из вершин нету в MCS, значит оно пустое => новое понятие состоит из одной только новой вершины
+                vector<int> a;
+                a.push_back(old_graph.size());
+                MCS.push_back(make_pair(new_line, a));
             }
-            if (flag) {
-                new_edges_combination = g(old_graph, new_vertex_combination, false);
-                bool flag = 1;
-                for (int j = 0; j < MCS.size(); j++) {
-                    if (MCS[j].first == new_edges_combination) {
+            else {
+                for (num_concept = 0; num_concept < old_MCS_size; num_concept++) { //ищем формальное понятие, в которое может входить понятие с подстрокой
+                    if (MCS[num_concept].second == new_vertex_combination) {
+                        break;
+                    }
+                }
+                int edges_count = 0, i = 0;
+                while (i < MCS[num_concept].first.size() && edges_count < new_line.size()) {
+                    if (MCS[num_concept].first[i] == new_line[edges_count]) {
+                        i++;
+                        edges_count++;
+                        new_edges_combination.push_back(new_line[edges_count - 1]);//строим пересечение по рёбрам понятия и новой вершины(строки)
+                        continue;
+                    }
+                    if (MCS[num_concept].first[i] > new_line[edges_count]) {
+                        edges_count++;
+                        continue;
+                    }
+                    if (MCS[num_concept].first[i] < new_line[edges_count]) {
+                        i++;
+                        continue;
+                    }
+                }
+                for (int j = 0; j < new_edges_combinations.size(); j++) { //проверяем, обрабатывали ли уже такую комбинацию вершин
+                    if (new_edges_combinations[j] == new_edges_combination) {//реализовано, так, потому что строить замыкание по новому графу ВРОДЕ БЫ значительно дольше
                         flag = 0;
                         break;
                     }
                 }
                 if (flag) {
-                    MCS.push_back(make_pair(new_edges_combination, new_vertex_combination));
+                    if (new_edges_combination == MCS[num_concept].first) { //если все рёбра понятия содержатся в новой строке(вершине), то нового понятия не появляется, в старое добавляется новая строка
+                        MCS[num_concept].second.push_back(old_graph.size());
+                    }
+                    else {
+                        vector<int>a;
+                        a.push_back(old_graph.size());
+                        MCS.push_back(make_pair(new_edges_combination, new_vertex_combination));//если нет, то повяляется новое понятие
+                    }
                 }
             }
-            if (v[level_num - 1] == delta_U[level_num] - 1) p--;
+            new_edges_combinations.push_back(new_edges_combination);
+            new_vertex_combination.clear();
+            new_edges_combination.clear();
+            if (level_num == new_line.size()) break;
+            if (v[level_num - 1] == new_line.size() - 1) p--; //для генерации подстроки
             else p = level_num - 1;
             if (p >= 0) for (int j = level_num - 1; j >= p; j--) v[j] = v[p] + j - p + 1;
         }
@@ -281,27 +313,53 @@ int main() {
             k++;
         }
     }
+    if (k == 0) new_vertex.push_back(rand() % N);
 
     new_graph.push_back(new_vertex);
     cout << "na4alo" << endl;
     Graph_output(graph);
     cout << endl;
-    int k = 0;
+    k = 0;
     for (int j = 0; j < new_vertex.size(); j++) {
         while (k++ < new_vertex[j]) cout << 0 << " ";
         cout << 1 << " ";
     }
-    while (k++ <= M) cout << 0 << " ";
+    while (k++ < M) cout << 0 << " ";
 
     //Graph_output(Graph_Transpose(graph));
     vector<pair<vector<int>, vector<int>>> MCS1;
     vector<pair<vector<int>, vector<int>>> MCS2;
-    int time = omp_get_wtime();
+    int time;
+    time = omp_get_wtime();
+    HFindMCS(MCS2, new_graph);
+    cout << endl;
+    for (int i = 0; i < MCS2.size(); i++) {
+        for (int j = 0; j < MCS2[i].first.size(); j++) cout << MCS2[i].first[j] << ' ';
+        cout << endl;
+        for (int j = 0; j < MCS2[i].second.size(); j++) cout << MCS2[i].second[j] << ' ';
+        cout << endl;
+    }
+    cout << endl << omp_get_wtime() - time << endl << MCS2.size();
+    time = omp_get_wtime();
     HFindMCS(MCS1, graph);
     Dynamic_MCS(MCS1, new_vertex, graph);
+    cout << endl;
+    for (int i = 0; i < MCS1.size(); i++) {
+        for (int j = 0; j < MCS1[i].first.size(); j++) cout << MCS1[i].first[j] << ' ';
+        cout << endl;
+        for (int j = 0; j < MCS1[i].second.size(); j++) cout << MCS1[i].second[j] << ' ';
+        cout << endl;
+    }
     cout << endl << omp_get_wtime() - time << endl << MCS1.size();
-    time = omp_get_wtime();
-    //HFindMCS_parallel(MCS2, graph);
-    HFindMCS(MCS2, new_graph);
-    cout << endl << omp_get_wtime() - time << endl << MCS1.size();
+    bool flag = 1;
+    for (int i = 0; i < MCS1.size(); i++) {
+        bool flag2 = 0;
+        for (int j = 0; j < MCS2.size(); j++) {
+            if (MCS1[i] == MCS2[j]) {
+                flag2 = 1;
+            }
+        }
+        if (!flag2) flag = 0;
+    }
+    if (flag) cout << "DA HY HAXYU";
 }
